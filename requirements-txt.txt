@@ -1,0 +1,4 @@
+pillow
+playwright
+openai
+rich
