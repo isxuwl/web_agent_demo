@@ -52,7 +52,7 @@ class Prediction(TypedDict):
 # 初始化OpenAI客户端
 client = OpenAI(api_key=os.environ['OPENAI_API_KEY'], base_url=os.environ['OPENAI_API_BASE'])
 
-# 系统提示
+# 系统提示 (In-Context Learning,ICL)
 SYSTEM_PROMPT = """
 你是一个像人类一样浏览网页的机器人。你现在需要完成一项任务。在每次迭代中，你将收到一个观察结果，包含网页截图、当前URL、页面标题和一些文本。这个截图的特点是在每个网页元素的左上角放置了数字标签。仔细分析截图信息，识别需要交互的网页元素对应的数字标签，然后按照指南选择以下操作之一：
 
@@ -163,17 +163,17 @@ Observation: {{用户提供的带标签的截图、当前URL、页面标题以�
 记住，要详细解释你的思考过程，并确保JSON格式正确。特别注意页面的变化，包括URL和内容的变化，避免重复不必要的操作。在每次操作后，重新评估当前页面状态，并据此调整你的策略。
 """
 
-# 工具函数
+# 工具函数 在给定的页面上点击指定的边界框
 def click(page: Page, bbox_id: int, bboxes: List[BBox]) -> Tuple[str, Optional[Page]]:
     """点击指定的边界框，并处理可能打开的新页面"""
     try:
-        bbox = bboxes[bbox_id]
+        bbox = bboxes[bbox_id] # 获取边界框信息
         # initial_pages = len(page.context.pages)
         
         # context = browser.new_context()
         with page.context.expect_page() as new_page_info:
-            page.mouse.click(bbox["x"], bbox["y"])
-        page.goto(new_page_info.value.url)
+            page.mouse.click(bbox["x"], bbox["y"])# 点击边界框并捕获新页面
+        page.goto(new_page_info.value.url)# 切换到新页面并等待加载
         page.wait_for_load_state(timeout=100000)
         # page = new_page_info.value
 
@@ -214,6 +214,7 @@ def type_text(page: Page, bbox_id: int, text: str, bboxes: List[BBox]) -> str:
     logging.info(f"在边界框 {bbox_id} 中输入了文本 '{text}' 并提交")
     return f"在边界框 {bbox_id} 中输入了文本 '{text}' 并提交"
 
+# 根据指定的目标（窗口或元素）和方向（向上或向下）进行滚动操作
 def scroll(page: Page, target: str, direction: str, bboxes: List[BBox]) -> str:
     """滚动页面或元素"""
     scroll_amount = 500 if target.upper() == "WINDOW" else 200
@@ -248,15 +249,16 @@ def to_search_page(page: Page) -> str:
     logging.info("导航到了必应搜索首页")
     return "导航到了必应搜索首页"
 
+# 用于标记页面上的可交互元素，并保存带有标记的页面截图
 screenshot_counter = 0
 def mark_page(page: Page):
     """标记页面上的可交互元素"""
     global screenshot_counter
     page.wait_for_load_state("networkidle",timeout=60000) 
-    with open("mark_page.js") as f:
+    with open("mark_page.js", encoding='utf-8') as f:# 从文件mark_page.js中读取JavaScript脚本内容
         mark_page_script = f.read()
     
-    page.evaluate(mark_page_script)
+    page.evaluate(mark_page_script)# 执行JavaScript脚本
     for _ in range(10):
         try:
             bboxes = page.evaluate("markPage()")
@@ -270,7 +272,12 @@ def mark_page(page: Page):
     
     screenshot = page.screenshot(timeout=60000)
     screenshot_counter += 1 
-    file_name = f"mark{screenshot_counter}.png"
+
+    # 确保截图目录存在
+    screenshot_dir = "./screenshot"
+    os.makedirs(screenshot_dir, exist_ok=True)
+
+    file_name = os.path.join(screenshot_dir, f"mark{screenshot_counter}.png")
     img = Image.open(io.BytesIO(screenshot))
     img.save(file_name)
     logging.info(f"保存了截图 {file_name}")
